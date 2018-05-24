@@ -1,103 +1,96 @@
-const Crawler    = require("crawler")
-const fs         = require("fs")
-const path       = require("path")
-const urlBase    = "http://shirts4mike.com/"
-const urlPage    = "shirts.php"
-const initialUrl = urlBase + urlPage
+const scrapeIt = require("scrape-it"),
+      path     = require("path"),
+      fs       = require("fs")
 
-/*
- Source for folder creation function: https://stackoverflow.com/a/24311711/4373927
- */
-const mkdirSync = dirPath => {
-	try {
-		fs.mkdirSync(dirPath)
-	} catch (err) {
-		if (err.code !== "EEXIST") {
-			throw err
+const urlBase    = "http://shirts4mike.com/",
+      urlPage    = "shirts.php",
+      initialUrl = urlBase + urlPage
+
+// make sure "data" folder exists
+createDirectory("data")
+
+const date        = new Date(),
+      filename    = date.toISOString().slice(0, 10),
+      writeStream = fs.createWriteStream(`./data/${filename}.csv`)
+
+// write the headers to the csv
+writeStream.write("Title,Price,ImageURL,URL,Time\n")
+
+// scrape the initial url and catch any 404 errors
+scrapeIt(initialUrl, {
+	products: {
+		listItem: ".products li",
+		data    : {
+			url: {
+				selector: "a",
+				attr    : "href"
+			}
 		}
 	}
+}).then(({data}) => {
+
+	console.log(`${initialUrl} scraped!`)
+
+	data.products.forEach(product => {
+		const productUrl = urlBase + product.url
+
+		scrapeIt(productUrl, {
+			title: "#content h1",
+			price: "#content h1 .price",
+			image: {
+				selector: "#content .shirt-picture img",
+				attr    : "src"
+			}
+		}, (error, {data}) => {
+
+			console.log("product found!")
+
+			data.title = data.title.replace(data.price + " ", "")
+			data.price = data.price.replace("$", "")
+			data.image = urlBase + data.image
+
+			const product = new Product(productUrl, data.title, data.price, data.image)
+
+			writeStream.write(product.csvify())
+		})
+	})
+}).catch(error => {
+	const message = `[${date}] ${error}`
+	fs.appendFile("scraper-error.log", message, error => {if (error) {throw error}})
+	console.log(`There’s been a 404 error. Cannot connect to ${initialUrl}`)
+})
+
+/**
+ * Creates a directory iff one doesn't exist
+ * @param folder the name of the folder
+ */
+function createDirectory(folder) {
+	const mkdirSync = dirPath => {
+		try {
+			fs.mkdirSync(dirPath)
+		} catch (err) {
+			if (err.code !== "EEXIST") {
+				throw err
+			}
+		}
+	}
+
+	mkdirSync(path.resolve(`./${folder}`))
 }
 
-mkdirSync(path.resolve("./data"))
-
-var crawler = new Crawler({
-							  maxConnections: 10,
-							  // This will be called for each crawled page
-							  callback      : function (error, response, done) {
-								  if (error) {
-									  console.log(error)
-								  } else {
-									  let products    = []
-									  const $         = response.$
-									  const $products = $(".products li")
-
-									  for (let i = 0; i < $products.length; i++) {
-										  let product          = new Product()
-										  const $childElements = $products[i].children
-										  for (let i = 0; i < $childElements.length; i++) {
-
-											  // if true, current child element is a link
-											  if ($childElements[i].name === "a") {
-												  const productUrl = urlBase + $childElements[i].attribs.href
-												  product.url      = productUrl
-
-												  crawler.direct({
-																	 uri             : productUrl,
-																	 skipEventRequest: false, // defualts to true, direct requests won't trigger Evnet:'request'
-																	 callback        : function (error, response) {
-																		 if (error) {console.log(error)}
-																		 else {
-																			 const $     = response.$
-																			 const price = $("#content h1 .price").text()
-																			 const title = $("#content h1").text().replace(price + " ", "")
-
-																			 product.price = price;
-																			 product.title = title;
-																		 }
-																	 }
-																 })
-
-											  }
-										  }
-
-										  products.push(product)
-									  }
-
-									  fs.appendFile("index.html", $products, error => {
-										  if (error) {throw error}
-
-										  else {
-											  console.log(products)
-										  }
-									  })
-								  }
-								  done()
-							  }
-						  })
-
-crawler.queue(initialUrl)
-
+/**
+ * A class to represent a product
+ */
 class Product {
-	constructor() {
-		this._price = 0
-		this._title = "Title"
-		this._url   = initialUrl
-		this._image = ""
+	constructor(url, title, price, image) {
+		this.url = url
+		this.title = title
+		this.price = price
+		this.image = image
 	}
 
-	set price(value) {
-		this._price = value
-	}
-
-	set title(value) {
-		this._title = value
-	}
-
-	set url(value) {
-		this._url = value
-	}
-
-	set image(value) {
-		this._image = value
+	csvify() {
+		return `"${this.title}",${this.price},${this.image},${this.url},${date}\n`
 	}
 }
+
