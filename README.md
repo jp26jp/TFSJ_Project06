@@ -18,4 +18,4 @@ If your program is run twice, it should overwrite the data in the CSV file with 
 ***
 If http://shirts4mike.com is down, an error message describing the issue should appear in the console.
 - The error should be human-friendly, such as “There’s been a 404 error. Cannot connect to http://shirts4mike.com.”
-- To test and make sure the error message displays as expected, you can disable the wifi on your computer or device.
+- To test and make sure the error message displays as expected, you can disable the wifi on your computer or device
